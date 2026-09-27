@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <color name="pq_blue">#082A70</color>
+    <color name="pq_background">#FFFFFF</color>
+
+    <color name="colorPrimary">#082A70</color>
+    <color name="colorPrimaryDark">#051A45</color>
+    <color name="colorAccent">#D31717</color>
+
+</resources>

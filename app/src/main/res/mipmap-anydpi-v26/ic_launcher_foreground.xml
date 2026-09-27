@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- PhysiQuiz "P" monogram, scaled and centered so the whole letter
+         stays inside the adaptive-icon safe zone (no clipping on round/
+         squircle/teardrop launcher masks). -->
+    <path
+        android:fillColor="#082A70"
+        android:pathData="
+        M32.3,26.1
+        L32.3,81.9
+        L40.5,81.9
+        L40.5,60.6
+        L54.4,60.6
+        C69.2,60.6 75.7,53.2 75.7,42.5
+        C75.7,31.9 69.2,26.1 54.4,26.1
+        Z
+        M40.5,34.3
+        L52.8,34.3
+        C61.0,34.3 66.7,36.8 66.7,42.5
+        C66.7,48.3 61.0,52.4 52.8,52.4
+        L40.5,52.4
+        Z"/>
+    <!-- Orbit ring + electron dot as one rotated unit, so the dot always
+         sits exactly on the ring. Also fully inside the safe zone. -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-15">
+        <path
+            android:strokeColor="#12B9F4"
+            android:strokeWidth="3"
+            android:fillColor="@android:color/transparent"
+            android:pathData="
+            M27,54
+            A27,12 0 1,0 81,54
+            A27,12 0 1,0 27,54"/>
+        <path
+            android:fillColor="#19D3A2"
+            android:pathData="
+            M81,50
+            A4,4 0,1,0 81,58
+            A4,4 0,1,0 81,50"/>
+    </group>
+</vector>
