@@ -25,6 +25,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       - name: Install Android SDK platform
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
@@ -34,14 +36,6 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # NOTE: no manual "recreate the project structure" step here on purpose.
-      # This repo already has a real Gradle module (app/src/main/java/...,
-      # app/build.gradle, build.gradle, settings.gradle) checked in — Gradle
-      # builds directly from that. A script that copies files into a
-      # freshly-made folder on every run is fragile: any file the script
-      # forgets to list (like AppConfig.java before) silently goes missing
-      # from the build, and any build.gradle it regenerates overrides the
-      # real one in the repo.
       - name: Build APK
         run: gradle --no-daemon :app:assembleDebug
 
