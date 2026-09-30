@@ -28,6 +28,7 @@ import android.view.ViewTreeObserver;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -62,6 +63,9 @@ public class MainActivity extends Activity {
     private static final String PREF_ATTEMPT_TOKEN = "resume_attempt_token";
     private static final String PREF_ATTEMPT_EXAM_ID = "resume_attempt_exam_id";
 
+    /** 🎛 کلید خاموش‌کن فاز ۱: اگر روزی خواستی همه افکت‌های سه‌بعدی قطع شود فقط false کن. */
+    private static final boolean EFFECTS_3D = true;
+
     private SharedPreferences prefs;
     private ApiClient api;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -76,12 +80,11 @@ public class MainActivity extends Activity {
     private Typeface fontBold = Typeface.DEFAULT_BOLD;
     private final LruCache<String, Bitmap> imageCache = new LruCache<>(20);
     private final java.util.Map<String, LinearLayout> navItems = new java.util.HashMap<>();
-    private final java.util.Map<String, TextView> navIcons = new java.util.HashMap<>();
+    private final java.util.Map<String, View> navIcons = new java.util.HashMap<>();
     private final java.util.Map<String, TextView> navLabels = new java.util.HashMap<>();
     private final java.util.Map<String, View> navIconBadges = new java.util.HashMap<>();
 
-    // تم تیره دیگر دستی نیست: از روشنایی پس‌زمینه‌ای که وردپرس فرستاده به‌صورت خودکار استخراج
-    // می‌شود — پس پریست «نارنجی روی مشکی» در پنل، بی‌درنگ اپ را به حالت نئون لاکچری می‌برد.
+    // تم تیره از روشنایی پس‌زمینه وردپرس استخراج می‌شود (پریست نارنجی لاکچری = نئون خودکار)
     private boolean darkMode = false;
     private int cBg, cSurface, cBorder, cAccentBorder, cAccentTint, cTextPrimary, cTextSecondary, cTextStrong, cHint, cPlaceholder;
 
@@ -91,6 +94,7 @@ public class MainActivity extends Activity {
     private LabGridBackground labGrid;
     private TextView topTitle;
     private ProgressBar loading;
+    private TiltHelper tilt;
 
     private long currentAttemptId = 0;
     private String currentAttemptToken = "";
@@ -168,7 +172,7 @@ public class MainActivity extends Activity {
         setFullScreenContent(box);
     }
 
-    /** اسپلش متحرک: لوگو با محو ظاهر شدن + خط برند که از وسط به دو طرف کشیده می‌شود. */
+    /** اسپلش متحرک: لوگو + خط برند که از وسط کشیده می‌شود. */
     private void showBootSplash() {
         LinearLayout box = column();
         box.setGravity(Gravity.CENTER);
@@ -219,8 +223,9 @@ public class MainActivity extends Activity {
         try { background = Color.parseColor(config.backgroundColor); } catch (Exception ignored) {}
         darkMode = luminance(background) < 0.5f;
         computeThemeTokens();
-        getWindow().setStatusBarColor(darkMode ? cBg : cSurface);
-        setLightStatusBarIcons(!darkMode);
+        getWindow().setStatusBarColor(darkMode ? cBg : accent);
+        // نوار بالا در حالت روشن نارنجی است → آیکون‌های نوار وضعیت باید روشن (سفید) باشند
+        setLightStatusBarIcons(darkMode);
         if (config.forceFullscreen) {
             getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         }
@@ -300,11 +305,12 @@ public class MainActivity extends Activity {
         topBar.setElevation(dp(2));
         topTitle = text(config.appName + "  •", 19, darkMode ? cTextPrimary : Color.WHITE, true);
         topBar.addView(topTitle, new LinearLayout.LayoutParams(0, dp(46), 1));
-        Button refresh = smallButton("🔄");
-        refresh.setBackground(withRipple(null, 20, darkMode ? 0x1F000000 : 0x33FFFFFF));
-        refresh.setTextSize(16);
-        refresh.setOnClickListener(v -> refreshCurrent());
-        topBar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(44)));
+        FrameLayout refreshWrap = new FrameLayout(this);
+        MonoIcon refreshIcon = new MonoIcon(this).set("refresh").color(darkMode ? cTextPrimary : Color.WHITE);
+        refreshWrap.addView(refreshIcon, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
+        refreshWrap.setBackground(withRipple(null, 20, darkMode ? 0x1F000000 : 0x33FFFFFF));
+        refreshWrap.setOnClickListener(v -> refreshCurrent());
+        topBar.addView(refreshWrap, new LinearLayout.LayoutParams(dp(46), dp(44)));
         root.addView(topBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(this);
@@ -320,11 +326,11 @@ public class MainActivity extends Activity {
         bottomBar.setPadding(dp(6), dp(8), dp(6), dp(10));
         bottomBar.setBackgroundColor(cSurface);
         bottomBar.setElevation(dp(6));
-        addNav("🏠", "خانه", this::showHome);
-        addNav("📝", "آزمون‌ها", this::showExams);
-        addNav("📊", "نتایج", this::showResults);
-        addNav("📁", "فایل‌ها", this::showFiles);
-        addNav("👤", "پروفایل", this::showProfile);
+        addNav("home", "خانه", this::showHome);
+        addNav("exam", "آزمون‌ها", this::showExams);
+        addNav("chart", "نتایج", this::showResults);
+        addNav("folder", "فایل‌ها", this::showFiles);
+        addNav("user", "پروفایل", this::showProfile);
         root.addView(bottomBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         loading = new ProgressBar(this);
@@ -337,31 +343,35 @@ public class MainActivity extends Activity {
         setContentView(overlay);
     }
 
-    private void addNav(String emoji, String label, Runnable action) {
+    private void addNav(String iconName, String label, Runnable action) {
         LinearLayout col = column();
         col.setGravity(Gravity.CENTER);
-        TextView iconView = text(emoji, 21, cTextSecondary, false);
-        iconView.setGravity(Gravity.CENTER);
-        iconView.setPadding(dp(5), dp(5), dp(5), dp(5));
-        iconView.setBackground(roundRect(Color.TRANSPARENT, 16, Color.TRANSPARENT, 0));
-        col.addView(iconView, new LinearLayout.LayoutParams(dp(44), dp(34)));
+        FrameLayout pillWrap = new FrameLayout(this);
+        pillWrap.setBackground(roundRect(Color.TRANSPARENT, 16, Color.TRANSPARENT, 0));
+        int pad = dp(8);
+        pillWrap.setPadding(pad, pad, pad, pad);
+        MonoIcon mv = new MonoIcon(this).set(iconName).color(cTextSecondary);
+        pillWrap.addView(mv, new FrameLayout.LayoutParams(dp(22), dp(22)));
+        col.addView(pillWrap, new LinearLayout.LayoutParams(dp(40), dp(36)));
         TextView labelView = text(label, 11, cTextSecondary, false);
         labelView.setGravity(Gravity.CENTER);
         col.addView(labelView, matchWrapMargin(4, 0));
-        col.setOnClickListener(v -> { addPressScale(col, 0.92f); action.run(); });
+        col.setOnClickListener(v -> { addPressScale(col, 0.93f); action.run(); });
         col.setPadding(dp(2), dp(6), dp(2), dp(6));
         addRippleFeedback(col, 16);
         bottomBar.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         navItems.put(label, col);
-        navIcons.put(label, iconView);
+        navIcons.put(label, mv);
         navLabels.put(label, labelView);
-        navIconBadges.put(label, iconView);
+        navIconBadges.put(label, pillWrap);
     }
 
     private void updateActiveNav(String title) {
         for (String key : navIcons.keySet()) {
             boolean active = key.equals(title);
             int color = active ? accent : cTextSecondary;
+            View iv = navIcons.get(key);
+            if (iv instanceof MonoIcon) ((MonoIcon) iv).color(color);
             TextView lbl = navLabels.get(key);
             lbl.setTextColor(color);
             lbl.setTypeface(active ? fontBold : fontRegular);
@@ -406,29 +416,31 @@ public class MainActivity extends Activity {
         page.setPadding(dp(22), dp(30), dp(22), dp(30));
         page.setBackgroundColor(darkMode ? Color.TRANSPARENT : cBg);
 
-        // کارت گرادیان برند (لاکچری)
+        // ۱) خوش‌آمد — بالاترین عنصر صفحه (طبق درخواست)
+        TextView h = text("خوش آمدی 👋", 27, cTextPrimary, true);
+        page.addView(h, matchWrap());
+        TextView p = text("برای ورود به داشبورد آموزشی و آزمون‌های خود، اطلاعات حسابت را وارد کن.", 14, cTextSecondary, false);
+        p.setPadding(0, dp(7), 0, dp(16)); page.addView(p, matchWrap());
+
+        // ۲) کارت گرادیان برند
         LinearLayout brand = column();
-        brand.setPadding(dp(24), dp(28), dp(24), dp(28));
+        brand.setPadding(dp(24), dp(26), dp(24), dp(26));
         GradientDrawable brandBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{accent, darken(accent, 0.62f)});
-        brandBg.setCornerRadius(dp(28));
+        brandBg.setCornerRadius(dp(26));
         brand.setBackground(brandBg);
         brand.setElevation(dp(5));
         applyGlow(brand, 5);
-        TextView badge = text("PHYSIQUIZ", 26, Color.WHITE, true);
+        TextView badge = text("PHYSIQUIZ", 25, Color.WHITE, true);
         badge.setGravity(Gravity.CENTER);
         badge.setLetterSpacing(0.18f);
         brand.addView(badge, matchWrap());
         TextView brandSub = text("آموزش • آزمون • پیشرفت", 13, adjustAlpha(Color.WHITE, 0xE6), false);
-        brandSub.setGravity(Gravity.CENTER); brandSub.setPadding(0, dp(9), 0, 0);
+        brandSub.setGravity(Gravity.CENTER); brandSub.setPadding(0, dp(8), 0, 0);
         brand.addView(brandSub, matchWrap());
-        page.addView(brand, matchWrapMargin(0, 20));
+        page.addView(brand, matchWrapMargin(0, 18));
 
-        TextView h = text("خوش آمدی 👋", 28, cTextPrimary, true);
-        page.addView(h, matchWrap());
-        TextView p = text("برای ورود به داشبورد آموزشی و آزمون‌های خود، اطلاعات حسابت را وارد کن.", 14, cTextSecondary, false);
-        p.setPadding(0, dp(8), 0, dp(18)); page.addView(p, matchWrap());
-
+        // ۳) فرم ورود
         LinearLayout form = card(); form.setPadding(dp(18), dp(20), dp(18), dp(20));
         TextView ulabel = text("نام کاربری یا ایمیل", 13, cTextStrong, true); form.addView(ulabel, matchWrap());
         EditText username = input("مثلاً student@example.com"); username.setSingleLine(true);
@@ -438,29 +450,28 @@ public class MainActivity extends Activity {
         EditText password = input("رمز عبور خود را وارد کنید");
         password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setSingleLine(true);
-        password.setPadding(dp(14), dp(11), dp(64), dp(11));
+        password.setPadding(dp(14), dp(11), dp(60), dp(11));
         attachFocusGlow(password);
         FrameLayout passWrap = new FrameLayout(this);
         passWrap.addView(password, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Button eye = new Button(this);
-        eye.setText("نمایش");
-        eye.setAllCaps(false);
-        eye.setTextSize(12);
-        eye.setTypeface(fontBold);
-        eye.setTextColor(accent);
-        eye.setBackground(withRipple(null, 12, adjustAlpha(accent, 0x26)));
-        eye.setPadding(dp(10), 0, dp(10), 0);
+        // آیکون چشم تک‌رنگ (MonoIcon) به‌جای دکمه متنی
+        MonoIcon eyeIcon = new MonoIcon(this).set("eye").color(accent);
+        FrameLayout eyeBtn = new FrameLayout(this);
+        eyeBtn.setBackground(withRipple(null, 12, adjustAlpha(accent, 0x26)));
+        int epad = dp(9);
+        eyeBtn.setPadding(epad, epad, epad, epad);
+        eyeBtn.addView(eyeIcon, new FrameLayout.LayoutParams(dp(22), dp(22)));
         FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.LEFT);
-        elp.leftMargin = dp(6);
-        passWrap.addView(eye, elp);
+        elp.leftMargin = dp(5);
+        passWrap.addView(eyeBtn, elp);
         final boolean[] shown = {false};
-        eye.setOnClickListener(v -> {
+        eyeBtn.setOnClickListener(v -> {
             shown[0] = !shown[0];
             int sel = password.getSelectionEnd();
             password.setInputType(InputType.TYPE_CLASS_TEXT | (shown[0] ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : InputType.TYPE_TEXT_VARIATION_PASSWORD));
             password.setTypeface(fontRegular);
             if (sel >= 0) password.setSelection(Math.min(sel, password.length()));
-            eye.setText(shown[0] ? "پنهان" : "نمایش");
+            eyeIcon.set(shown[0] ? "eyeoff" : "eye");
         });
         form.addView(passWrap, matchWrapMargin(0, 8));
         TextView forgot = text("رمز عبور را فراموش کرده‌ام", 13, accent, true);
@@ -485,7 +496,7 @@ public class MainActivity extends Activity {
         scroll.addView(page); setScreen(scroll);
     }
 
-    /** اینپوت هنگام فوکوس حاشیه نارنجی پررنگ می‌گیرد (مثل فرم ورود سایت). */
+    /** اینپوت هنگام فوکوس حاشیه برند می‌گیرد. */
     private void attachFocusGlow(EditText e) {
         e.setOnFocusChangeListener((v, has) -> e.setBackground(roundRect(cSurface, 14, has ? accent : cBorder, has ? 2 : 1)));
     }
@@ -523,11 +534,15 @@ public class MainActivity extends Activity {
             JSONObject stats = json.optJSONObject("stats");
             String name = user == null ? "دانش‌آموز" : user.optString("display_name", "دانش‌آموز");
 
+            java.util.ArrayList<View> tiltViews = new java.util.ArrayList<>();
+
             if (config.bannerUrl != null && !config.bannerUrl.trim().isEmpty()) {
                 page.addView(bannerImage(config.bannerUrl), matchWrapMargin(0, 14));
             }
 
-            page.addView(hero("سلام " + name + " 👋", "امروز یک قدم دیگر به تسلط بر فیزیک نزدیک‌تر شو.", name), matchWrapMargin(0, 14));
+            View heroView = hero("سلام " + name + " 👋", "امروز یک قدم دیگر به تسلط بر فیزیک نزدیک‌تر شو.", name);
+            tiltViews.add(heroView);
+            page.addView(heroView, matchWrapMargin(0, 14));
 
             if (config.cardRows != null && config.cardRows.length() > 0) {
                 renderCarouselsFor(page, "home");
@@ -539,17 +554,25 @@ public class MainActivity extends Activity {
 
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
-            row.addView(statCard("تلاش‌ها", stats == null ? 0 : stats.optInt("attempts"), ""), weighted());
-            row.addView(statCard("بهترین", stats == null ? 0 : stats.optDouble("best_percent"), "%"), weightedMargin(8));
+            View s1 = statCard("تلاش‌ها", stats == null ? 0 : stats.optInt("attempts"), "");
+            View s2 = statCard("بهترین", stats == null ? 0 : stats.optDouble("best_percent"), "%");
+            tiltViews.add(s1); tiltViews.add(s2);
+            row.addView(s1, weighted());
+            row.addView(s2, weightedMargin(8));
             page.addView(row, matchWrapMargin(0, 8));
             LinearLayout row2 = new LinearLayout(this);
             row2.setOrientation(LinearLayout.HORIZONTAL);
-            row2.addView(statCard("سطح", stats == null ? 1 : stats.optInt("level", 1), ""), weighted());
-            row2.addView(statCard("XP", stats == null ? 0 : stats.optInt("xp"), ""), weightedMargin(8));
+            View s3 = statCard("سطح", stats == null ? 1 : stats.optInt("level", 1), "");
+            View s4 = statCard("XP", stats == null ? 0 : stats.optInt("xp"), "");
+            tiltViews.add(s3); tiltViews.add(s4);
+            row2.addView(s3, weighted());
+            row2.addView(s4, weightedMargin(8));
             page.addView(row2, matchWrapMargin(0, 18));
 
             if (stats != null && stats.optInt("attempts", 0) > 0) {
-                page.addView(progressCard("نرخ قبولی", stats.optInt("success_rate", 0)), matchWrapMargin(0, 18));
+                View pc = progressCard("نرخ قبولی", stats.optInt("success_rate", 0));
+                tiltViews.add(pc);
+                page.addView(pc, matchWrapMargin(0, 18));
             }
 
             page.addView(sectionTitle("آزمون‌های فعال"), matchWrap());
@@ -566,7 +589,18 @@ public class MainActivity extends Activity {
             files.setOnClickListener(v -> showFiles());
             page.addView(files, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
             setScrollable(page);
+
+            // 🌀 تیلت ژیروسکوپی فقط روی خانه — با خروج خودکار قطع می‌شود
+            if (EFFECTS_3D) {
+                detachTilt();
+                tilt = new TiltHelper(this, tiltViews.toArray(new View[0]), 3.2f);
+                tilt.attach();
+            }
         });
+    }
+
+    private void detachTilt() {
+        if (tilt != null) { tilt.detach(); tilt = null; }
     }
 
     private void renderCarouselsFor(LinearLayout page, String pageKey) {
@@ -1083,16 +1117,25 @@ public class MainActivity extends Activity {
         float percent = (float) result.optDouble("percent");
         int stateColor = passed ? Color.rgb(22, 163, 74) : Color.rgb(220, 38, 38);
 
-        // حلقه درصد متحرک
+        // حلقه درصد + چرخش ۳بعدی ورود + جشن ذرات در صورت قبولی
         LinearLayout ringRow = new LinearLayout(this);
         ringRow.setGravity(Gravity.CENTER);
         ProgressRingView ring = new ProgressRingView(this);
         ring.setColors(accent, cTextPrimary);
         ring.setPercent(percent);
         ringRow.addView(ring, new LinearLayout.LayoutParams(dp(150), dp(150)));
+
+        FrameLayout ringHost = new FrameLayout(this);
+        ringHost.addView(ringRow, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        BurstView burst = new BurstView(this);
+        burst.setAccent(accent);
+        burst.setVisibility(View.GONE);
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(dp(240), dp(240), Gravity.CENTER);
+        ringHost.addView(burst, blp);
+
         LinearLayout ringCard = card();
         ringCard.setGravity(Gravity.CENTER);
-        ringCard.addView(ringRow, matchWrap());
+        ringCard.addView(ringHost, matchWrap());
         TextView verdict = text(passed ? "قبول شدی 🎉" : "نتیجه ثبت شد", 18, stateColor, true);
         verdict.setGravity(Gravity.CENTER); verdict.setPadding(0, dp(10), 0, 0);
         ringCard.addView(verdict, matchWrap());
@@ -1106,6 +1149,14 @@ public class MainActivity extends Activity {
         results.setOnClickListener(v -> showResults());
         page.addView(results, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
         setScrollable(page);
+
+        if (EFFECTS_3D) {
+            ringCard.setCameraDistance(2400f * getResources().getDisplayMetrics().density);
+            ringCard.setRotationY(85f);
+            ringCard.postDelayed(() -> ringCard.animate().rotationY(0f).setDuration(480)
+                    .setInterpolator(new OvershootInterpolator(1.1f)).start(), 60);
+        }
+        if (passed) ringCard.postDelayed(burst::burst, 700);
     }
 
     private void showResults() {
@@ -1306,7 +1357,6 @@ public class MainActivity extends Activity {
                 if (timerText != null) {
                     timerText.setText(timeText(remainingSeconds));
                     if (remainingSeconds <= 60) {
-                        // زیر یک دقیقه: چشمک هشدار
                         timerText.setAlpha(timerText.getAlpha() > 0.65f ? 0.45f : 1f);
                     }
                 }
@@ -1330,6 +1380,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        detachTilt(); // صرفه‌جویی باتری وقتی اپ در پس‌زمینه است
         if (currentAttemptId > 0 && currentAntiCheat) {
             io.execute(() -> {
                 try {
@@ -1343,8 +1394,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // اگر کاربر دوباره به خانه برگشت و صفحه خانه هنوز زیر دست است، تیلت ادامه پیدا کند
+        if (EFFECTS_3D && tilt != null) tilt.attach();
+    }
+
+    @Override
     protected void onDestroy() {
         stopTimer();
+        detachTilt();
         io.shutdownNow();
         super.onDestroy();
     }
@@ -1356,12 +1415,23 @@ public class MainActivity extends Activity {
         setScreen(scroll);
     }
 
+    /** ورود صفحات با چرخش سه‌بعدی ظریف + فنر نرم. */
     private void setScreen(View view) {
+        detachTilt();
         content.removeAllViews();
         view.setAlpha(0f);
-        view.setTranslationY(dp(14));
+        if (EFFECTS_3D) {
+            view.setCameraDistance(2400f * getResources().getDisplayMetrics().density);
+            view.setRotationY(52f);
+            view.setTranslationY(dp(10));
+        } else {
+            view.setTranslationY(dp(14));
+        }
         content.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        view.animate().alpha(1f).translationY(0f).setDuration(240).setInterpolator(new DecelerateInterpolator()).start();
+        view.animate().alpha(1f).rotationY(0f).translationY(0f)
+                .setDuration(EFFECTS_3D ? 340 : 240)
+                .setInterpolator(new OvershootInterpolator(1.05f))
+                .start();
     }
 
     private LinearLayout pageColumn() {
