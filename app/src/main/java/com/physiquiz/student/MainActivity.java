@@ -10,7 +10,6 @@ import android.text.TextUtils;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -23,6 +22,7 @@ import android.os.Looper;
 import android.text.Html;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.ViewGroup;
@@ -39,7 +39,6 @@ import android.widget.ProgressBar;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -70,21 +69,19 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private AppConfig config = new AppConfig();
-    private int accent = Color.rgb(37, 88, 221);
+    private int accent = Color.rgb(255, 122, 0);
     private int background = Color.rgb(246, 248, 252);
 
     private Typeface fontRegular = Typeface.DEFAULT;
     private Typeface fontBold = Typeface.DEFAULT_BOLD;
-    /** Small in-memory-only cache so re-visiting a screen in the same session doesn't re-download the same banner/card images. */
     private final LruCache<String, Bitmap> imageCache = new LruCache<>(20);
     private final java.util.Map<String, LinearLayout> navItems = new java.util.HashMap<>();
     private final java.util.Map<String, TextView> navIcons = new java.util.HashMap<>();
     private final java.util.Map<String, TextView> navLabels = new java.util.HashMap<>();
     private final java.util.Map<String, View> navIconBadges = new java.util.HashMap<>();
 
-    // Dark mode: `background`/`accent` above stay exactly what WordPress configured (light-theme
-    // brand colors); these are the derived, theme-aware tokens every screen should read instead of
-    // hardcoded grays, recomputed by computeThemeTokens() whenever darkMode or the WP colors change.
+    // تم تیره دیگر دستی نیست: از روشنایی پس‌زمینه‌ای که وردپرس فرستاده به‌صورت خودکار استخراج
+    // می‌شود — پس پریست «نارنجی روی مشکی» در پنل، بی‌درنگ اپ را به حالت نئون لاکچری می‌برد.
     private boolean darkMode = false;
     private int cBg, cSurface, cBorder, cAccentBorder, cAccentTint, cTextPrimary, cTextSecondary, cTextStrong, cHint, cPlaceholder;
 
@@ -112,9 +109,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         loadFonts();
-        // Dark/neon theme was tried and removed per product decision — always light now,
-        // regardless of any dark-mode preference a previous build may have saved.
-        darkMode = false;
         computeThemeTokens();
         getWindow().setStatusBarColor(cSurface);
         setLightStatusBarIcons(!darkMode);
@@ -149,7 +143,6 @@ public class MainActivity extends Activity {
         showConfigError(result.error, result.status);
     }
 
-    /** Standalone full-screen states (splash, config error, maintenance/force-update block) aren't inside the main shell's content area, so each gets its own grid-pattern layer behind it for a consistent first impression in dark mode. */
     private void setFullScreenContent(View box) {
         FrameLayout root = new FrameLayout(this);
         if (darkMode) {
@@ -175,34 +168,69 @@ public class MainActivity extends Activity {
         setFullScreenContent(box);
     }
 
+    /** اسپلش متحرک: لوگو با محو ظاهر شدن + خط برند که از وسط به دو طرف کشیده می‌شود. */
     private void showBootSplash() {
         LinearLayout box = column();
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(28), dp(28), dp(28), dp(28));
-        TextView logo = text("PHYSI QUIZ", 30, accent, true);
+
+        TextView logo = text("PHYSIQUIZ", 32, accent, true);
         logo.setGravity(Gravity.CENTER);
+        logo.setLetterSpacing(0.22f);
+        logo.setAlpha(0f);
         box.addView(logo, matchWrap());
-        TextView title = text(config.appName == null || config.appName.trim().isEmpty() ? "فیزیکوییز" : config.appName, 20, cTextPrimary, true);
-        title.setGravity(Gravity.CENTER); title.setPadding(0,dp(12),0,dp(8));
+
+        FrameLayout lineWrap = new FrameLayout(this);
+        View line = new View(this);
+        line.setBackground(roundRect(accent, 4, Color.TRANSPARENT, 0));
+        FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(dp(0), dp(4));
+        llp.gravity = Gravity.CENTER;
+        lineWrap.addView(line, llp);
+        LinearLayout.LayoutParams lw = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4));
+        lw.topMargin = dp(16);
+        box.addView(lineWrap, lw);
+
+        TextView title = text(config.appName == null || config.appName.trim().isEmpty() ? "فیزیکوییز" : config.appName, 19, cTextPrimary, true);
+        title.setGravity(Gravity.CENTER); title.setPadding(0, dp(14), 0, dp(6));
+        title.setAlpha(0f);
         box.addView(title, matchWrap());
-        TextView sub = text("سامانه هوشمند آزمون و یادگیری", 14, cTextSecondary, false);
-        sub.setGravity(Gravity.CENTER); box.addView(sub, matchWrap());
+        TextView sub = text("سامانه هوشمند آزمون و یادگیری", 13, cTextSecondary, false);
+        sub.setGravity(Gravity.CENTER); sub.setAlpha(0f);
+        box.addView(sub, matchWrap());
         ProgressBar pb = new ProgressBar(this);
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(44),dp(44)); pp.topMargin=dp(28);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(dp(42), dp(42)); pp.topMargin = dp(30);
+        pb.setAlpha(0f);
         box.addView(pb, pp);
         setFullScreenContent(box);
+
+        logo.animate().alpha(1f).scaleX(1.05f).scaleY(1.05f).setDuration(520).setInterpolator(new DecelerateInterpolator()).start();
+        title.animate().alpha(1f).setDuration(420).setStartDelay(220).start();
+        sub.animate().alpha(1f).setDuration(420).setStartDelay(340).start();
+        pb.animate().alpha(1f).setDuration(420).setStartDelay(460).start();
+        ValueAnimator la = ValueAnimator.ofInt(0, dp(130));
+        la.setDuration(720); la.setStartDelay(160);
+        la.setInterpolator(new DecelerateInterpolator());
+        la.addUpdateListener(a -> { llp.width = (int) a.getAnimatedValue(); line.setLayoutParams(llp); });
+        la.start();
     }
 
     private void applyTheme() {
         try { accent = Color.parseColor(config.accentColor); } catch (Exception ignored) {}
         try { background = Color.parseColor(config.backgroundColor); } catch (Exception ignored) {}
+        darkMode = luminance(background) < 0.5f;
         computeThemeTokens();
+        getWindow().setStatusBarColor(darkMode ? cBg : cSurface);
+        setLightStatusBarIcons(!darkMode);
         if (config.forceFullscreen) {
             getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         }
         if (config.blockScreenshots) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         }
+    }
+
+    private float luminance(int c) {
+        return (0.299f * Color.red(c) + 0.587f * Color.green(c) + 0.114f * Color.blue(c)) / 255f;
     }
 
     private void bootWithConfig() {
@@ -268,12 +296,12 @@ public class MainActivity extends Activity {
         topBar = new LinearLayout(this);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
         topBar.setPadding(dp(16), dp(10), dp(16), dp(10));
-        topBar.setBackgroundColor(cSurface);
+        topBar.setBackgroundColor(darkMode ? cSurface : accent);
         topBar.setElevation(dp(2));
-        topTitle = text(config.appName + "  •", 19, cTextPrimary, true);
+        topTitle = text(config.appName + "  •", 19, darkMode ? cTextPrimary : Color.WHITE, true);
         topBar.addView(topTitle, new LinearLayout.LayoutParams(0, dp(46), 1));
         Button refresh = smallButton("🔄");
-        refresh.setBackground(withRipple(null, 20, 0x1F000000));
+        refresh.setBackground(withRipple(null, 20, darkMode ? 0x1F000000 : 0x33FFFFFF));
         refresh.setTextSize(16);
         refresh.setOnClickListener(v -> refreshCurrent());
         topBar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(44)));
@@ -291,7 +319,7 @@ public class MainActivity extends Activity {
         bottomBar.setGravity(Gravity.CENTER);
         bottomBar.setPadding(dp(6), dp(8), dp(6), dp(10));
         bottomBar.setBackgroundColor(cSurface);
-        bottomBar.setElevation(dp(4));
+        bottomBar.setElevation(dp(6));
         addNav("🏠", "خانه", this::showHome);
         addNav("📝", "آزمون‌ها", this::showExams);
         addNav("📊", "نتایج", this::showResults);
@@ -312,23 +340,17 @@ public class MainActivity extends Activity {
     private void addNav(String emoji, String label, Runnable action) {
         LinearLayout col = column();
         col.setGravity(Gravity.CENTER);
-        // Switched from a vector-drawable icon to a plain emoji glyph: after three attempts (fixed
-        // layout height, colorFilter, then setImageTintList) the vector still never rendered even
-        // with byte-verified-correct source files and a clean reinstall, so vector rendering itself
-        // is the suspect now (likely a build/AAPT issue specific to this project's setup) — a text
-        // glyph sidesteps that entirely and is guaranteed to draw the same way the labels already do.
-        // Emoji are naturally full-color, so no tint is applied (that would just flatten them to gray).
-        TextView iconView = text(emoji, 20, cTextSecondary, false);
+        TextView iconView = text(emoji, 21, cTextSecondary, false);
         iconView.setGravity(Gravity.CENTER);
         iconView.setPadding(dp(5), dp(5), dp(5), dp(5));
-        iconView.setBackground(roundRect(Color.TRANSPARENT, 14, Color.TRANSPARENT, 0));
-        col.addView(iconView, new LinearLayout.LayoutParams(dp(42), dp(32)));
+        iconView.setBackground(roundRect(Color.TRANSPARENT, 16, Color.TRANSPARENT, 0));
+        col.addView(iconView, new LinearLayout.LayoutParams(dp(44), dp(34)));
         TextView labelView = text(label, 11, cTextSecondary, false);
         labelView.setGravity(Gravity.CENTER);
         col.addView(labelView, matchWrapMargin(4, 0));
-        col.setOnClickListener(v -> action.run());
+        col.setOnClickListener(v -> { addPressScale(col, 0.92f); action.run(); });
         col.setPadding(dp(2), dp(6), dp(2), dp(6));
-        addRippleFeedback(col, 14);
+        addRippleFeedback(col, 16);
         bottomBar.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         navItems.put(label, col);
         navIcons.put(label, iconView);
@@ -336,18 +358,15 @@ public class MainActivity extends Activity {
         navIconBadges.put(label, iconView);
     }
 
-    /** Highlights the bottom-nav item matching the current section title (a soft accent-tinted pill behind the icon, plus a bold label); others stay neutral. Silently does nothing for sub-pages (e.g. "جزئیات آزمون") that have no matching tab. */
     private void updateActiveNav(String title) {
         for (String key : navIcons.keySet()) {
             boolean active = key.equals(title);
             int color = active ? accent : cTextSecondary;
-            // Emoji glyphs render in their own natural color regardless of text color, so only the
-            // pill background + label communicate the active state here.
             TextView lbl = navLabels.get(key);
             lbl.setTextColor(color);
             lbl.setTypeface(active ? fontBold : fontRegular);
             View badge = navIconBadges.get(key);
-            if (badge != null) badge.setBackground(roundRect(active ? adjustAlpha(accent, 0x26) : Color.TRANSPARENT, 14, Color.TRANSPARENT, 0));
+            if (badge != null) badge.setBackground(roundRect(active ? adjustAlpha(accent, darkMode ? 0x33 : 0x26) : Color.TRANSPARENT, 16, Color.TRANSPARENT, 0));
         }
     }
 
@@ -384,33 +403,75 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout page = column();
-        page.setPadding(dp(20), dp(28), dp(20), dp(28));
+        page.setPadding(dp(22), dp(30), dp(22), dp(30));
         page.setBackgroundColor(darkMode ? Color.TRANSPARENT : cBg);
 
-        LinearLayout brand = card();
-        GradientDrawable brandBg = new GradientDrawable();
-        brandBg.setColor(accent); brandBg.setCornerRadius(dp(28));
-        brand.setBackground(brandBg); brand.setPadding(dp(22),dp(24),dp(22),dp(24));
-        TextView badge = text("PHYSIQUIZ", 24, Color.WHITE, true); badge.setGravity(Gravity.CENTER);
+        // کارت گرادیان برند (لاکچری)
+        LinearLayout brand = column();
+        brand.setPadding(dp(24), dp(28), dp(24), dp(28));
+        GradientDrawable brandBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{accent, darken(accent, 0.62f)});
+        brandBg.setCornerRadius(dp(28));
+        brand.setBackground(brandBg);
+        brand.setElevation(dp(5));
+        applyGlow(brand, 5);
+        TextView badge = text("PHYSIQUIZ", 26, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setLetterSpacing(0.18f);
         brand.addView(badge, matchWrap());
-        TextView brandSub = text("آموزش • آزمون • پیشرفت", 13, Color.WHITE, false); brandSub.setGravity(Gravity.CENTER); brandSub.setPadding(0,dp(8),0,0);
+        TextView brandSub = text("آموزش • آزمون • پیشرفت", 13, adjustAlpha(Color.WHITE, 0xE6), false);
+        brandSub.setGravity(Gravity.CENTER); brandSub.setPadding(0, dp(9), 0, 0);
         brand.addView(brandSub, matchWrap());
-        page.addView(brand, matchWrapMargin(0,18));
+        page.addView(brand, matchWrapMargin(0, 20));
 
         TextView h = text("خوش آمدی 👋", 28, cTextPrimary, true);
         page.addView(h, matchWrap());
         TextView p = text("برای ورود به داشبورد آموزشی و آزمون‌های خود، اطلاعات حسابت را وارد کن.", 14, cTextSecondary, false);
-        p.setPadding(0,dp(8),0,dp(18)); page.addView(p, matchWrap());
+        p.setPadding(0, dp(8), 0, dp(18)); page.addView(p, matchWrap());
 
-        LinearLayout form = card(); form.setPadding(dp(18),dp(18),dp(18),dp(18));
-        TextView ulabel=text("نام کاربری یا ایمیل",13,cTextStrong,true); form.addView(ulabel,matchWrap());
-        EditText username=input("مثلاً student@example.com"); username.setSingleLine(true); form.addView(username,matchWrapMargin(0,8));
-        TextView plabel=text("رمز عبور",13,cTextStrong,true); plabel.setPadding(0,dp(14),0,0); form.addView(plabel,matchWrap());
-        EditText password=input("رمز عبور خود را وارد کنید"); password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD); password.setSingleLine(true); form.addView(password,matchWrapMargin(0,8));
-        TextView forgot=text("رمز عبور را فراموش کرده‌ام",13,accent,true); forgot.setGravity(Gravity.RIGHT); forgot.setPadding(0,dp(10),0,dp(10)); forgot.setOnClickListener(v->showForgotPasswordDialog(username.getText().toString().trim())); form.addView(forgot,matchWrap());
-        Button login=primaryButton("ورود به حساب ←"); form.addView(login,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56)));
-        page.addView(form,matchWrapMargin(0,18));
-        TextView foot=text("حساب کاربری شما مستقیماً از PhysiQuiz مدیریت می‌شود.",12,cTextSecondary,false); foot.setGravity(Gravity.CENTER); page.addView(foot,matchWrap());
+        LinearLayout form = card(); form.setPadding(dp(18), dp(20), dp(18), dp(20));
+        TextView ulabel = text("نام کاربری یا ایمیل", 13, cTextStrong, true); form.addView(ulabel, matchWrap());
+        EditText username = input("مثلاً student@example.com"); username.setSingleLine(true);
+        attachFocusGlow(username);
+        form.addView(username, matchWrapMargin(0, 8));
+        TextView plabel = text("رمز عبور", 13, cTextStrong, true); plabel.setPadding(0, dp(14), 0, 0); form.addView(plabel, matchWrap());
+        EditText password = input("رمز عبور خود را وارد کنید");
+        password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setSingleLine(true);
+        password.setPadding(dp(14), dp(11), dp(64), dp(11));
+        attachFocusGlow(password);
+        FrameLayout passWrap = new FrameLayout(this);
+        passWrap.addView(password, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button eye = new Button(this);
+        eye.setText("نمایش");
+        eye.setAllCaps(false);
+        eye.setTextSize(12);
+        eye.setTypeface(fontBold);
+        eye.setTextColor(accent);
+        eye.setBackground(withRipple(null, 12, adjustAlpha(accent, 0x26)));
+        eye.setPadding(dp(10), 0, dp(10), 0);
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.LEFT);
+        elp.leftMargin = dp(6);
+        passWrap.addView(eye, elp);
+        final boolean[] shown = {false};
+        eye.setOnClickListener(v -> {
+            shown[0] = !shown[0];
+            int sel = password.getSelectionEnd();
+            password.setInputType(InputType.TYPE_CLASS_TEXT | (shown[0] ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            password.setTypeface(fontRegular);
+            if (sel >= 0) password.setSelection(Math.min(sel, password.length()));
+            eye.setText(shown[0] ? "پنهان" : "نمایش");
+        });
+        form.addView(passWrap, matchWrapMargin(0, 8));
+        TextView forgot = text("رمز عبور را فراموش کرده‌ام", 13, accent, true);
+        forgot.setGravity(Gravity.RIGHT); forgot.setPadding(0, dp(10), 0, dp(10));
+        forgot.setOnClickListener(v -> showForgotPasswordDialog(username.getText().toString().trim()));
+        form.addView(forgot, matchWrap());
+        Button login = primaryButton("ورود به حساب ←");
+        form.addView(login, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        page.addView(form, matchWrapMargin(0, 18));
+        TextView foot = text("حساب کاربری شما مستقیماً از " + config.appName + " مدیریت می‌شود.", 12, cTextSecondary, false);
+        foot.setGravity(Gravity.CENTER); page.addView(foot, matchWrap());
 
         login.setOnClickListener(v -> {
             if(username.getText().toString().trim().isEmpty()||password.getText().toString().isEmpty()){toast("نام کاربری و رمز عبور را وارد کنید.");return;}
@@ -422,6 +483,11 @@ public class MainActivity extends Activity {
             });
         });
         scroll.addView(page); setScreen(scroll);
+    }
+
+    /** اینپوت هنگام فوکوس حاشیه نارنجی پررنگ می‌گیرد (مثل فرم ورود سایت). */
+    private void attachFocusGlow(EditText e) {
+        e.setOnFocusChangeListener((v, has) -> e.setBackground(roundRect(cSurface, 14, has ? accent : cBorder, has ? 2 : 1)));
     }
 
     private void showForgotPasswordDialog(String prefill) {
@@ -466,7 +532,6 @@ public class MainActivity extends Activity {
             if (config.cardRows != null && config.cardRows.length() > 0) {
                 renderCarouselsFor(page, "home");
             } else if (config.cards != null && config.cards.length() > 0) {
-                // Fallback for a WordPress side that hasn't been updated to send card_rows yet.
                 for (int i = 0; i < config.cards.length(); i++) {
                     addContentCard(page, config.cards.optJSONObject(i));
                 }
@@ -504,8 +569,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** Renders one WordPress-managed content card: image (optional) + title + short text, tappable if it has a link. */
-    /** Renders every carousel row the admin has enabled for this specific screen (by its "pages" checkboxes in wp-admin) — same rows/cards data, just filtered per screen instead of always showing everything only on Home. Rows saved before this feature existed (no "pages" field at all) are treated as home-only, matching their old behavior. */
     private void renderCarouselsFor(LinearLayout page, String pageKey) {
         if (config.cardRows == null) return;
         for (int i = 0; i < config.cardRows.length(); i++) {
@@ -525,7 +588,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** One horizontally-scrolling carousel row (its optional title, then a swipeable strip of compact cards) — the modern replacement for the old single-column card stack, entirely wp-admin driven. */
     private void addCarouselRow(LinearLayout page, JSONObject rowJson) {
         if (rowJson == null) return;
         JSONArray cardsArr = rowJson.optJSONArray("cards");
@@ -545,7 +607,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < cardsArr.length(); i++) {
             View card = buildCarouselCard(cardsArr.optJSONObject(i));
             if (card == null) continue;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(148), ViewGroup.LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.leftMargin = dp(10);
             row.addView(card, lp);
             any = true;
@@ -555,7 +617,6 @@ public class MainActivity extends Activity {
         page.addView(scroll, matchWrapMargin(0, 14));
     }
 
-    /** A compact, fixed-width card for inside a carousel row — same admin-controlled fields as addContentCard (image/title/text/link/layout/colors) but sized and truncated to sit nicely in a horizontal strip instead of taking the full screen width. */
     private View buildCarouselCard(JSONObject cardJson) {
         if (cardJson == null) return null;
         String title = cardJson.optString("title", "");
@@ -574,7 +635,7 @@ public class MainActivity extends Activity {
         LinearLayout card = card();
         card.setPadding(dp(12), dp(12), dp(12), dp(12));
         if (!bgHex.isEmpty()) {
-            try { card.setBackground(roundRect(Color.parseColor(bgHex), 18, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1)); } catch (Exception ignored) { }
+            try { card.setBackground(roundRect(Color.parseColor(bgHex), 20, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1)); } catch (Exception ignored) { }
         }
         if (showImage) card.addView(contentCardImage(imageUrl, 90), matchWrapHeightMargin(90, 0, 8));
         if (!title.isEmpty()) {
@@ -592,7 +653,7 @@ public class MainActivity extends Activity {
         }
         if (!link.isEmpty()) {
             card.setOnClickListener(v -> openExternal(link));
-            addRippleFeedback(card, 18);
+            addRippleFeedback(card, 20);
         }
         return card;
     }
@@ -606,22 +667,18 @@ public class MainActivity extends Activity {
         String layout = cardJson.optString("layout", "image_top");
         if (title.isEmpty() && imageUrl.isEmpty() && cardText.isEmpty()) return;
 
-        // Optional per-card override colors set from wp-admin; fall back to the normal theme
-        // colors (same as every other card) when the admin left them blank.
         String bgHex = cardJson.optString("bg_color", "");
         String fgHex = cardJson.optString("text_color", "");
         int fg = cTextPrimary, fgSecondary = cTextStrong;
         try { if (!fgHex.isEmpty()) { fg = Color.parseColor(fgHex); fgSecondary = adjustAlpha(fg, 0xCC); } } catch (Exception ignored) { }
 
-        // "text_only" means the admin chose a plain color banner even if an image URL happens to
-        // still be set — the layout choice wins over just checking whether a URL is present.
         boolean showImage = !imageUrl.isEmpty() && !"text_only".equals(layout);
 
         LinearLayout card = card();
         if (!bgHex.isEmpty()) {
             try {
                 int bg = Color.parseColor(bgHex);
-                card.setBackground(roundRect(bg, 18, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1));
+                card.setBackground(roundRect(bg, 20, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1));
             } catch (Exception ignored) { }
         }
 
@@ -652,12 +709,11 @@ public class MainActivity extends Activity {
         }
         if (!link.isEmpty()) {
             card.setOnClickListener(v -> openExternal(link));
-            addRippleFeedback(card, 18);
+            addRippleFeedback(card, 20);
         }
         page.addView(card, matchWrapMargin(0, 10));
     }
 
-    /** Shared rounded/clipped image block for content cards; heightDp also doubles as the corner radius source for the "image_side" 64dp square vs the "image_top" 110dp banner. */
     private View contentCardImage(String imageUrl, int heightDp) {
         FrameLayout imgWrap = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable();
@@ -708,7 +764,6 @@ public class MainActivity extends Activity {
         page.addView(card, matchWrapMargin(0, 10));
     }
 
-    /** Persisted (not just in-memory) so a killed/relaunched app can resume an in-progress attempt instead of silently abandoning it — see resumeAttempt() and showExamDetail(). */
     private void saveAttemptPrefs(int examId) {
         prefs.edit()
                 .putLong(PREF_ATTEMPT_ID, currentAttemptId)
@@ -732,7 +787,6 @@ public class MainActivity extends Activity {
         showExamIntro(examId);
     }
 
-    /** Restores an in-progress attempt the app previously started but never got to finish reporting locally (app was killed, phone locked, etc.) — same shape as startExam()'s success path, just filled from GET /attempts/{id} instead of the start endpoint. Falls back to the normal intro screen if the saved attempt turns out to be gone/expired/already submitted. */
     private void resumeAttempt(long attemptId, String token, int examId) {
         prepareSection("جزئیات آزمون");
         runApi(() -> api.getAttempt("/wp-json/physiquiz/v1/attempts/" + attemptId, token), json -> {
@@ -751,8 +805,6 @@ public class MainActivity extends Activity {
             JSONObject state = json.optJSONObject("state");
             currentQuestionIndex = state != null ? state.optInt("current_index", 0) : 0;
             currentAntiCheat = currentExam.optBoolean("anti_cheat", false);
-            // Elapsed/remaining time comes from the server (based on started_at), not recomputed
-            // locally, so a resumed attempt can't get extra time just by reopening the app.
             remainingSeconds = Math.max(0, json.optLong("remaining", currentExam.optInt("duration_minutes", 0) * 60L));
             if (currentAntiCheat || config.blockScreenshots) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
@@ -760,8 +812,6 @@ public class MainActivity extends Activity {
             showQuestion();
             startTimer();
         }, error -> {
-            // Saved attempt no longer usable for any reason (deleted, wrong account, network-independent
-            // rejection) — don't keep retrying it forever, just clear it and let the student start fresh.
             clearAttemptPrefs();
             showExamIntro(examId);
         });
@@ -780,6 +830,7 @@ public class MainActivity extends Activity {
 
             JSONObject warm = exam.optJSONObject("warmup");
             CheckBox ack = new CheckBox(this);
+            ack.setButtonTintList(ColorStateList.valueOf(accent));
             if (warm != null && warm.optBoolean("enabled")) {
                 page.addView(sectionTitle(warm.optString("title", "گرم‌کن آزمون")), matchWrapMargin(0, 6));
                 String message = warm.optString("message", "");
@@ -808,6 +859,7 @@ public class MainActivity extends Activity {
             } else ack.setChecked(true);
 
             EditText accessCode = input("کد دسترسی (اگر آزمون کد دارد)");
+            attachFocusGlow(accessCode);
             if (exam.optBoolean("requires_access_code")) page.addView(accessCode, matchWrapMargin(0, 10));
 
             Button start = primaryButton("شروع آزمون");
@@ -854,12 +906,37 @@ public class MainActivity extends Activity {
         LinearLayout page = pageColumn();
         LinearLayout status = new LinearLayout(this);
         status.setOrientation(LinearLayout.HORIZONTAL);
+        status.setGravity(Gravity.CENTER_VERTICAL);
         TextView pos = text("سؤال " + (currentQuestionIndex + 1) + " از " + currentQuestions.length(), 14, cTextSecondary, true);
         timerText = text(timeText(remainingSeconds), 14, Color.rgb(220, 38, 38), true);
-        timerText.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        timerText.setGravity(Gravity.CENTER);
+        timerText.setBackground(roundRect(adjustAlpha(Color.rgb(220, 38, 38), 0x1A), 20, Color.TRANSPARENT, 0));
+        timerText.setPadding(dp(14), dp(5), dp(14), dp(5));
         status.addView(pos, weighted());
-        status.addView(timerText, weighted());
+        status.addView(timerText, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         page.addView(status, matchWrapMargin(0, 10));
+
+        // نوار پیشرفت متحرک نارنجی
+        FrameLayout track = new FrameLayout(this);
+        track.setBackground(roundRect(cPlaceholder, 6, Color.TRANSPARENT, 0));
+        View fill = new View(this);
+        fill.setBackground(roundRect(accent, 6, Color.TRANSPARENT, 0));
+        FrameLayout.LayoutParams fillLp = new FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT);
+        track.addView(fill, fillLp);
+        page.addView(track, matchWrapMargin(0, 12));
+        track.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override public void onGlobalLayout() {
+                track.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                int fullWidth = track.getWidth();
+                if (fullWidth <= 0) return;
+                int target = Math.round(fullWidth * ((currentQuestionIndex + 1) / (float) currentQuestions.length()));
+                ValueAnimator a = ValueAnimator.ofInt(0, target);
+                a.setDuration(500);
+                a.setInterpolator(new DecelerateInterpolator());
+                a.addUpdateListener(an -> { fillLp.width = (int) an.getAnimatedValue(); fill.setLayoutParams(fillLp); });
+                a.start();
+            }
+        });
 
         if ("pdf".equals(currentExam.optString("mode")) && !currentExam.optString("pdf_url", "").isEmpty()) {
             Button pdf = secondaryButton("مشاهده فایل PDF سؤال‌ها");
@@ -886,7 +963,8 @@ public class MainActivity extends Activity {
                 rb.setText(value);
                 rb.setTextSize(15);
                 rb.setTag(value);
-                rb.setPadding(dp(4), dp(7), dp(4), dp(7));
+                rb.setButtonTintList(ColorStateList.valueOf(accent));
+                rb.setPadding(dp(6), dp(9), dp(6), dp(9));
                 if (saved instanceof String && value.equals(saved)) rb.setChecked(true);
                 group.addView(rb, matchWrap());
             }
@@ -902,6 +980,8 @@ public class MainActivity extends Activity {
                 cb.setText(value);
                 cb.setTextSize(15);
                 cb.setTag(value);
+                cb.setButtonTintList(ColorStateList.valueOf(accent));
+                cb.setPadding(dp(6), dp(9), dp(6), dp(9));
                 cb.setChecked(arrayContains(savedArray, value));
                 group.addView(cb, matchWrap());
             }
@@ -909,6 +989,7 @@ public class MainActivity extends Activity {
             qCard.addView(group, matchWrap());
         } else {
             EditText answer = input("پاسخ شما");
+            attachFocusGlow(answer);
             if ("number".equals(type)) answer.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED);
             else if ("essay".equals(type)) { answer.setMinLines(5); answer.setGravity(Gravity.TOP | Gravity.RIGHT); }
             if (saved instanceof String) answer.setText((String) saved);
@@ -999,8 +1080,24 @@ public class MainActivity extends Activity {
             return;
         }
         boolean passed = result.optBoolean("passed");
-        String percent = fmt(result.optDouble("percent")) + "%";
-        page.addView(hero(passed ? "قبول شدی" : "نتیجه ثبت شد", "درصد نهایی: " + percent), matchWrapMargin(0, 14));
+        float percent = (float) result.optDouble("percent");
+        int stateColor = passed ? Color.rgb(22, 163, 74) : Color.rgb(220, 38, 38);
+
+        // حلقه درصد متحرک
+        LinearLayout ringRow = new LinearLayout(this);
+        ringRow.setGravity(Gravity.CENTER);
+        ProgressRingView ring = new ProgressRingView(this);
+        ring.setColors(accent, cTextPrimary);
+        ring.setPercent(percent);
+        ringRow.addView(ring, new LinearLayout.LayoutParams(dp(150), dp(150)));
+        LinearLayout ringCard = card();
+        ringCard.setGravity(Gravity.CENTER);
+        ringCard.addView(ringRow, matchWrap());
+        TextView verdict = text(passed ? "قبول شدی 🎉" : "نتیجه ثبت شد", 18, stateColor, true);
+        verdict.setGravity(Gravity.CENTER); verdict.setPadding(0, dp(10), 0, 0);
+        ringCard.addView(verdict, matchWrap());
+        page.addView(ringCard, matchWrapMargin(0, 14));
+
         page.addView(infoLine("امتیاز", fmt(result.optDouble("score")) + " از " + fmt(result.optDouble("max_score"))), matchWrapMargin(0, 6));
         page.addView(infoLine("صحیح", String.valueOf(result.optInt("correct_count"))), matchWrapMargin(0, 6));
         page.addView(infoLine("غلط", String.valueOf(result.optInt("wrong_count"))), matchWrapMargin(0, 6));
@@ -1083,10 +1180,10 @@ public class MainActivity extends Activity {
             LinearLayout page = pageColumn();
             page.addView(sectionIntro("اطلاعات دانش‌آموز", user.optString("email", "")), matchWrapMargin(0, 16));
             renderCarouselsFor(page, "profile");
-            EditText first = input("نام"); first.setText(user.optString("first_name", "")); page.addView(first, matchWrapMargin(0, 8));
-            EditText last = input("نام خانوادگی"); last.setText(user.optString("last_name", "")); page.addView(last, matchWrapMargin(0, 8));
-            EditText display = input("نام نمایشی"); display.setText(user.optString("display_name", "")); page.addView(display, matchWrapMargin(0, 8));
-            EditText mobile = input("شماره تماس"); mobile.setText(user.optString("mobile", "")); mobile.setInputType(InputType.TYPE_CLASS_PHONE); page.addView(mobile, matchWrapMargin(0, 12));
+            EditText first = input("نام"); attachFocusGlow(first); first.setText(user.optString("first_name", "")); page.addView(first, matchWrapMargin(0, 8));
+            EditText last = input("نام خانوادگی"); attachFocusGlow(last); last.setText(user.optString("last_name", "")); page.addView(last, matchWrapMargin(0, 8));
+            EditText display = input("نام نمایشی"); attachFocusGlow(display); display.setText(user.optString("display_name", "")); page.addView(display, matchWrapMargin(0, 8));
+            EditText mobile = input("شماره تماس"); attachFocusGlow(mobile); mobile.setText(user.optString("mobile", "")); mobile.setInputType(InputType.TYPE_CLASS_PHONE); page.addView(mobile, matchWrapMargin(0, 12));
             JSONObject ac = user.optJSONObject("academic");
             if (ac != null) {
                 page.addView(infoLine("پایه تحصیلی", ac.optString("grade_label", "ثبت نشده")), matchWrapMargin(0, 6));
@@ -1161,7 +1258,6 @@ public class MainActivity extends Activity {
         ));
     }
 
-    /** Same as the two-arg overload, but lets the caller handle a failed request itself (e.g. silently falling back to another flow) instead of always showing the generic error dialog. A 401 with an existing session still forces re-login either way, since that's never something a caller should paper over. */
     private void runApi(JsonCall call, JsonSuccess success, JsonError error) {
         loading.setVisibility(View.VISIBLE);
         io.execute(() -> {
@@ -1207,7 +1303,13 @@ public class MainActivity extends Activity {
         timerRunnable = new Runnable() {
             @Override public void run() {
                 if (remainingSeconds > 0) remainingSeconds--;
-                if (timerText != null) timerText.setText(timeText(remainingSeconds));
+                if (timerText != null) {
+                    timerText.setText(timeText(remainingSeconds));
+                    if (remainingSeconds <= 60) {
+                        // زیر یک دقیقه: چشمک هشدار
+                        timerText.setAlpha(timerText.getAlpha() > 0.65f ? 0.45f : 1f);
+                    }
+                }
                 if (remainingSeconds <= 0) {
                     stopTimer();
                     toast("زمان آزمون تمام شد؛ پاسخ‌ها ثبت نهایی می‌شوند.");
@@ -1257,8 +1359,9 @@ public class MainActivity extends Activity {
     private void setScreen(View view) {
         content.removeAllViews();
         view.setAlpha(0f);
+        view.setTranslationY(dp(14));
         content.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        view.animate().alpha(1f).setDuration(160).start();
+        view.animate().alpha(1f).translationY(0f).setDuration(240).setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private LinearLayout pageColumn() {
@@ -1276,17 +1379,13 @@ public class MainActivity extends Activity {
 
     private LinearLayout card() {
         LinearLayout card = column();
-        card.setPadding(dp(16), dp(15), dp(16), dp(15));
-        // In dark mode, a visibly lit accent-colored edge (not just the muted cBorder) is what
-        // actually reads as "glowing" up close, since shadows alone are too diffuse to notice on a
-        // small card. Light mode keeps the plain neutral border.
-        card.setBackground(roundRect(cSurface, 18, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1));
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(roundRect(cSurface, 20, darkMode ? adjustAlpha(accent, 0xB0) : cBorder, darkMode ? 2 : 1));
         card.setElevation(dp(2));
         applyGlow(card, 2);
         return card;
     }
 
-    /** In the dark "lab" theme, replaces the flat black card shadow with a soft glow tinted in the admin's own accent color (API 28+ colored shadows); a no-op in light mode where a colored glow would just look muddy. */
     private void applyGlow(View v, int elevationDp) {
         if (!darkMode) return;
         v.setOutlineAmbientShadowColor(adjustAlpha(accent, 0x90));
@@ -1294,9 +1393,6 @@ public class MainActivity extends Activity {
         v.setElevation(dp(elevationDp + 7));
     }
 
-    /** Animated fill bar (0 → real percent) for the home-screen success rate — waits for an actual
-     * layout pass via the view tree observer instead of View.post(), since the whole page is built
-     * before it's attached to the screen and a plain post() could fire with width still 0. */
     private View progressCard(String label, int percent) {
         LinearLayout c = card();
         LinearLayout headRow = new LinearLayout(this);
@@ -1341,21 +1437,19 @@ public class MainActivity extends Activity {
 
     private View statCard(String label, double targetValue, String suffix) {
         LinearLayout c = card();
-        // A whisper-soft brand-tinted gradient instead of the flat card fill — subtle enough to stay
-        // readable, but noticeably less "generic list item" than a plain white box.
         GradientDrawable grad = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{cSurface, tintTowardWhite(accent, 0.88f)});
-        grad.setCornerRadius(dp(18));
+                new int[]{cSurface, darkMode ? adjustAlpha(accent, 0x18) : tintTowardWhite(accent, 0.88f)});
+        grad.setCornerRadius(dp(20));
         if (!darkMode) grad.setStroke(dp(1), cBorder);
         c.setBackground(grad);
-        TextView big = text("0" + suffix, 23, accent, true);
+        TextView big = text("0" + suffix, 24, accent, true);
+        if (darkMode) applyTextGlow(big, accent);
         c.addView(big, matchWrap());
         c.addView(text(label, 12, cTextSecondary, false), matchWrapMargin(0, 3));
         animateCountUp(big, targetValue, suffix);
         return c;
     }
 
-    /** Counts a stat number up from 0 to its real value instead of just popping in — small, cheap (one ValueAnimator, no bitmaps/layout thrash) but makes the home screen feel alive on every open. */
     private void animateCountUp(TextView tv, double target, String suffix) {
         ValueAnimator anim = ValueAnimator.ofFloat(0f, (float) target);
         anim.setDuration(700);
@@ -1364,13 +1458,11 @@ public class MainActivity extends Activity {
         anim.start();
     }
 
-    /** Soft neon glow behind key numbers/headlines in the dark "lab" theme (native TextView shadow layer, no extra assets). */
     private void applyTextGlow(TextView t, int color) {
         if (!darkMode) return;
         t.setShadowLayer(dp(12), 0, 0, color);
     }
 
-    /** Small colored circle with a centered glyph (emoji or single letter) — used as a card header icon. Not a real icon font, just a tinted background behind whatever text is passed in. */
     private View roundIcon(String glyph, int bgColor, int fgColor, int sizeDp) {
         TextView t = new TextView(this);
         t.setText(glyph);
@@ -1384,7 +1476,6 @@ public class MainActivity extends Activity {
         return t;
     }
 
-    /** Small rounded status/label chip (e.g. exam state, pass/fail) tinted with the given color at low opacity. */
     private TextView pill(String label, int color) {
         TextView t = new TextView(this);
         t.setText(label);
@@ -1393,16 +1484,15 @@ public class MainActivity extends Activity {
         t.setTextSize(11);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(10), dp(4), dp(10), dp(4));
-        t.setBackground(roundRect(adjustAlpha(color, 0x22), 20, Color.TRANSPARENT, 0));
+        t.setBackground(roundRect(adjustAlpha(color, darkMode ? 0x33 : 0x22), 20, Color.TRANSPARENT, 0));
         return t;
     }
 
-    /** A card header row: a small tinted icon circle on the right (RTL) plus a title next to it, with an optional status pill pushed to the far side. */
     private LinearLayout cardHeader(String glyph, int tint, String title, View trailing) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(roundIcon(glyph, adjustAlpha(tint, 0x26), tint, 34), new LinearLayout.LayoutParams(dp(34), dp(34)));
+        row.addView(roundIcon(glyph, adjustAlpha(tint, darkMode ? 0x33 : 0x26), tint, 34), new LinearLayout.LayoutParams(dp(34), dp(34)));
         TextView t = text(title, 16, cTextPrimary, true);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         tlp.leftMargin = dp(10);
@@ -1412,7 +1502,6 @@ public class MainActivity extends Activity {
         return row;
     }
 
-    /** Rounded, cropped banner image loaded from the WordPress-configured URL. Hidden until (and unless) the image loads successfully. */
     private View bannerImage(String url) {
         FrameLayout wrap = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable();
@@ -1446,21 +1535,19 @@ public class MainActivity extends Activity {
                     ui.post(() -> { iv.setImageBitmap(bmp); iv.animate().alpha(1f).setDuration(220).start(); });
                 }
             } catch (Exception ignored) {
-                // Image failing to load should never block the app — just leave the placeholder background visible.
                 ui.post(() -> iv.animate().alpha(1f).setDuration(150).start());
             }
         });
     }
 
-    /** Warm gradient hero card (accent → darker accent) instead of flat gray, optionally with a name-initial avatar badge. */
     private View hero(String title, String subtitle, String avatarName) {
         LinearLayout h = column();
-        h.setPadding(dp(20), dp(20), dp(20), dp(20));
+        h.setPadding(dp(20), dp(22), dp(20), dp(22));
         GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{accent, darken(accent, 0.55f)});
-        g.setCornerRadius(dp(24));
+        g.setCornerRadius(dp(26));
         h.setBackground(g);
-        h.setElevation(dp(4));
-        applyGlow(h, 4);
+        h.setElevation(dp(5));
+        applyGlow(h, 5);
 
         if (avatarName != null && !avatarName.trim().isEmpty()) {
             LinearLayout row = new LinearLayout(this);
@@ -1476,7 +1563,7 @@ public class MainActivity extends Activity {
             h.addView(text(title, 22, Color.WHITE, true), matchWrap());
         }
 
-        TextView s = text(subtitle, 13, Color.rgb(240, 244, 255), false);
+        TextView s = text(subtitle, 13, adjustAlpha(Color.WHITE, 0xDA), false);
         s.setPadding(0, dp(8), 0, 0);
         h.addView(s, matchWrap());
         return h;
@@ -1505,7 +1592,6 @@ public class MainActivity extends Activity {
         return Color.rgb(Math.min(255, Math.max(0, r)), Math.min(255, Math.max(0, g)), Math.min(255, Math.max(0, b)));
     }
 
-    /** Blends a color toward white — used for soft, barely-there brand-tinted gradients on light-mode cards (e.g. statCard) instead of a flat fill. factor=1 is pure white, 0 is the color unchanged. */
     private int tintTowardWhite(int color, float factor) {
         int r = Math.round(Color.red(color) + (255 - Color.red(color)) * factor);
         int g = Math.round(Color.green(color) + (255 - Color.green(color)) * factor);
@@ -1576,7 +1662,7 @@ public class MainActivity extends Activity {
         e.setTypeface(fontRegular);
         e.setTextColor(cTextPrimary);
         e.setHintTextColor(cHint);
-        e.setPadding(dp(14), dp(11), dp(14), dp(11));
+        e.setPadding(dp(14), dp(12), dp(14), dp(12));
         e.setBackground(roundRect(cSurface, 14, cBorder, 1));
         e.setSingleLine(false);
         return e;
@@ -1590,10 +1676,18 @@ public class MainActivity extends Activity {
         b.setTextColor(Color.WHITE);
         b.setTypeface(fontBold);
         GradientDrawable grad = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{accent, darken(accent, 0.82f)});
-        grad.setCornerRadius(dp(18));
-        b.setBackground(withRipple(grad, 18, 0x40FFFFFF));
+        grad.setCornerRadius(dp(16));
+        b.setBackground(withRipple(grad, 16, 0x40FFFFFF));
         b.setElevation(dp(3));
         applyGlow(b, 3);
+        b.setOnTouchListener((v, ev) -> {
+            switch (ev.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(80).start(); break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL: v.animate().scaleX(1f).scaleY(1f).setDuration(120).start(); break;
+            }
+            return false;
+        });
         return b;
     }
 
@@ -1604,7 +1698,7 @@ public class MainActivity extends Activity {
         b.setTextSize(15);
         b.setTextColor(accent);
         b.setTypeface(fontBold);
-        b.setBackground(withRipple(roundRect(cSurface, 18, cAccentBorder, 1), 18, adjustAlpha(accent, 0x33)));
+        b.setBackground(withRipple(roundRect(cSurface, 16, cAccentBorder, 1), 16, adjustAlpha(accent, 0x33)));
         return b;
     }
 
@@ -1628,22 +1722,13 @@ public class MainActivity extends Activity {
         return d;
     }
 
-    /** Loads the bundled Vazirmatn fonts once; silently falls back to the system font if the asset is ever missing. */
     private void loadFonts() {
         try { fontRegular = Typeface.createFromAsset(getAssets(), "fonts/Vazirmatn-Regular.ttf"); } catch (Exception ignored) { }
         try { fontBold = Typeface.createFromAsset(getAssets(), "fonts/Vazirmatn-Bold.ttf"); } catch (Exception ignored) { }
     }
 
-    /**
-     * Recomputes every theme-aware color token from the current darkMode flag plus the
-     * WordPress-configured accent/background colors. Call this any time darkMode, accent, or
-     * background changes, before building/rebuilding any screen.
-     */
     private void computeThemeTokens() {
         if (darkMode) {
-            // Derived from the admin's own accent color (very dark, low-luminance tint of it) instead
-            // of a flat gray-black, so the whole dark theme actually reads as "neon on tinted dark",
-            // not a generic system dark mode.
             cBg = darken(accent, 0.10f);
             cSurface = darken(accent, 0.17f);
             cBorder = darken(accent, 0.32f);
@@ -1664,12 +1749,9 @@ public class MainActivity extends Activity {
             cPlaceholder = Color.rgb(230, 233, 240);
             cAccentTint = adjustAlpha(accent, 0x14);
         }
-        // Border/tint derived from the admin's own accent color (not a hardcoded blue) so it still
-        // looks right whatever brand color is configured in WordPress.
         cAccentBorder = adjustAlpha(accent, darkMode ? 0x66 : 0x40);
     }
 
-    /** Dark status bar icons (light=false) when the bar itself is dark (dark mode), light-on-dark icons (light=true) otherwise — keeps the clock/battery readable either way. */
     private void setLightStatusBarIcons(boolean light) {
         View decor = getWindow().getDecorView();
         int flags = decor.getSystemUiVisibility();
@@ -1678,18 +1760,11 @@ public class MainActivity extends Activity {
         decor.setSystemUiVisibility(flags);
     }
 
-    /** Persists the dark-mode choice and rebuilds the whole UI from scratch (simplest way to repaint every screen consistently). */
     private void setDarkMode(boolean enabled) {
-        darkMode = enabled;
         prefs.edit().putBoolean(PREF_DARK_MODE, enabled).apply();
         recreate();
     }
 
-    /**
-     * Wraps a drawable with a ripple touch-feedback layer clipped to a rounded-rect mask, using
-     * the stock Android RippleDrawable (API 21+, no external dependency). Pass content=null for a
-     * "ripple-only" overlay meant to sit on top of an existing background via setForeground().
-     */
     private Drawable withRipple(Drawable content, int radiusDp, int rippleColor) {
         GradientDrawable mask = new GradientDrawable();
         mask.setColor(Color.WHITE);
@@ -1697,9 +1772,13 @@ public class MainActivity extends Activity {
         return new RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask);
     }
 
-    /** Adds a subtle ripple on top of a view's existing background/content without altering it (e.g. a whole clickable card). */
     private void addRippleFeedback(View v, int radiusDp) {
         v.setForeground(withRipple(null, radiusDp, adjustAlpha(accent, 0x26)));
+    }
+
+    private void addPressScale(View v, float scale) {
+        v.animate().scaleX(scale).scaleY(scale).setDuration(90).start();
+        v.postDelayed(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(120).start(), 110);
     }
 
     private int adjustAlpha(int color, int alpha) {
